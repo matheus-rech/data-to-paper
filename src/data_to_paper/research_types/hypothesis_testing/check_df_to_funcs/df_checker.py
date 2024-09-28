@@ -40,7 +40,7 @@ from data_to_paper.llm_coding_utils.matplotlib_utils import AxisParameters
 from data_to_paper.run_gpt_code.base_run_contexts import RegisteredRunContext
 from data_to_paper.run_gpt_code.overrides.dataframes.df_with_attrs import InfoDataFrameWithSaveObjFuncCall
 
-from data_to_paper.utils import dedent_triple_quote_str
+from data_to_paper.text import dedent_triple_quote_str
 from data_to_paper.utils.check_type import raise_on_wrong_func_argument_types, name_of_type
 from data_to_paper.utils.dataframe import extract_df_row_labels, extract_df_column_labels, extract_df_axes_labels
 from data_to_paper.utils.nice_list import NiceList
@@ -118,7 +118,8 @@ class ChainChecker(BaseChecker):
             issues, intermediate_results = checker.run_checks()
             self.issues.extend(issues)
             self.intermediate_results.update(intermediate_results)
-            if issues and self.stop_after_first_issue:
+            non_forgivable_issues = [issue for issue in self.issues if issue.forgive_after is None]
+            if non_forgivable_issues and self.stop_after_first_issue:
                 break
 
 
@@ -578,7 +579,7 @@ class DfContentChecker(BaseContentDfChecker):
     def _is_index_a_range(index, max_allowed_range: int = 2):
         num_rows = len(index)
         return not isinstance(index, pd.MultiIndex) \
-            and list(index) == list(range(num_rows)) and index.dtype == int \
+            and list(index) == list(range(num_rows)) and pd.api.types.is_integer_dtype(index.dtype) \
             and num_rows > max_allowed_range
 
     CHOICE_OF_CHECKS = BaseDfChecker.CHOICE_OF_CHECKS | {

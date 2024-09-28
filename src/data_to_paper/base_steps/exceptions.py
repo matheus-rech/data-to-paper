@@ -1,6 +1,9 @@
-from data_to_paper.exceptions import TerminateException
+from dataclasses import dataclass
+
+from data_to_paper.terminate.exceptions import TerminateException
 
 
+@dataclass
 class FailedCreatingProductException(TerminateException):
     reason: str
 

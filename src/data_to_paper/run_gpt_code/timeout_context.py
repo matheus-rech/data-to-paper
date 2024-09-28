@@ -1,8 +1,13 @@
+# This module is not being used anymore. Timeout is now implemented by CodeRunnerWrapper
+# The use of signal is really nice because it allows catching the specific line where the code timed out,
+# but it only works on mac, and there is no such alternative for Windows.
+
+
 import signal
 import threading
 import os
 from dataclasses import dataclass
-from typing import Type
+from typing import Type, Optional
 
 from data_to_paper.run_gpt_code.base_run_contexts import RegisteredRunContext
 
@@ -43,6 +48,8 @@ class TimeoutUnixContext(BaseTimeoutContext):
 
 @dataclass
 class TimeoutWindowsContext(BaseTimeoutContext):
+    stop_event: Optional[threading.Event] = None
+    worker_thread: Optional[threading.Thread] = None
 
     def __enter__(self):
         self.stop_event = threading.Event()
@@ -52,7 +59,10 @@ class TimeoutWindowsContext(BaseTimeoutContext):
         return super().__enter__()
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if not self.stop_event.is_set():
+        is_stopped = self.stop_event.is_set()
+        self.stop_event = None
+        self.worker_thread = None
+        if not is_stopped:
             raise self.exception(self.seconds)
         return super().__exit__(exc_type, exc_val, exc_tb)
 

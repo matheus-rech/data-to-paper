@@ -13,7 +13,7 @@ from pathlib import Path
 
 from data_to_paper.utils.file_utils import is_name_matches_list_of_wildcard_names
 from data_to_paper.utils.types import ListBasedSet
-from data_to_paper.utils import dedent_triple_quote_str
+from data_to_paper.text import dedent_triple_quote_str
 
 from .exceptions import CodeWriteForbiddenFile, CodeReadForbiddenFile, \
     CodeImportForbiddenModule, UnAllowedFilesCreated
@@ -69,8 +69,12 @@ class PreventFileOpen(SingletonRegisteredRunContext):
             self._is_system_file(file_name)
 
     def is_allowed_write_file(self, file_name: str) -> bool:
-        file_path = Path(file_name).resolve()
-        if self.allowed_write_folder is not None and file_path.parents[0].resolve() != self.allowed_write_folder and \
+        try:
+            file_path = Path(file_name).resolve()
+        except TypeError:
+            return True
+        if self.allowed_write_folder is not None and \
+                file_path.parents[0].resolve() != Path(self.allowed_write_folder).resolve() and \
                 not _is_temp_file(file_name):
             return False
         return self.allowed_write_files == 'all' or \
@@ -80,14 +84,14 @@ class PreventFileOpen(SingletonRegisteredRunContext):
         file_name = args[0] if len(args) > 0 else kwargs.get('file', None)
         open_mode = args[1] if len(args) > 1 else kwargs.get('mode', 'r')
         is_opening_for_writing = open_mode in ['w', 'a', 'x', 'w+b', 'a+b', 'x+b', 'wb', 'ab', 'xb']
-        if is_opening_for_writing:
-            if not self.is_allowed_write_file(file_name):
-                raise CodeWriteForbiddenFile(file=file_name)
-        else:
-            if not self.is_allowed_read_file(file_name) \
-                    and not ModifyImport.get_runtime_instance(). \
-                    is_currently_importing():  # allow read files when importing packages
-                raise CodeReadForbiddenFile(file=file_name)
+        # allow read/write files when importing packages
+        if not ModifyImport.get_runtime_instance().is_currently_importing():
+            if is_opening_for_writing:
+                if not self.is_allowed_write_file(file_name):
+                    raise CodeWriteForbiddenFile(file=file_name)
+            else:
+                if not self.is_allowed_read_file(file_name):
+                    raise CodeReadForbiddenFile(file=file_name)
         return self.original_open(*args, **kwargs)
 
     def _is_system_file(self, file_name):
@@ -192,9 +196,8 @@ class ModifyImport(SingletonRegisteredRunContext):
             try:
                 return self.original_import(name, globals, locals, fromlist, level)
             except Exception as e:
-                exc = ImportError(str(e))
-                exc.fromlist = fromlist
-                raise exc
+                e.fromlist = fromlist
+                raise e
 
     @contextmanager
     def within_import(self, package_name):

@@ -5,10 +5,9 @@ from typing import Optional, List, Tuple, Union, Type, Dict, Any, Iterable
 import numpy as np
 
 from data_to_paper.env import SUPPORTED_PACKAGES, DEBUG_MODE, MAX_EXEC_TIME, PAUSE_AT_RULE_BASED_FEEDBACK
-from data_to_paper.utils import dedent_triple_quote_str, line_count
+from data_to_paper.text import dedent_triple_quote_str, line_count, wrap_as_block
 from data_to_paper.utils.replacer import format_value
 from data_to_paper.utils.print_to_file import print_and_log
-from data_to_paper.utils.text_formatting import wrap_as_block
 from data_to_paper.base_cast import Agent
 from data_to_paper.conversation.message_designation import RangeMessageDesignation
 from data_to_paper.code_and_output_files.code_and_output import CodeAndOutput
@@ -41,6 +40,10 @@ def _get_description_of_run_error(error: Exception):
         {}
         ```
         """).format(str_error)
+
+
+# Good for debugging:
+FORGIVE_ALL_FORGIVABLE_ISSUES = False
 
 
 @dataclass
@@ -401,10 +404,9 @@ class DebuggerConverser(BackgroundProductsConverser):
         )
 
     def _remove_issues_exceeding_max_count(self, issues: List[RunIssue]):
-        for issue in issues:
-            if issue.forgive_after is not None and \
-                    self.issues_to_counts.get(issue, 0) >= issue.forgive_after:
-                issues.remove(issue)
+        return [issue for issue in issues if issue.forgive_after is None or
+                not FORGIVE_ALL_FORGIVABLE_ISSUES and
+                self.issues_to_counts.get(issue, 0) < issue.forgive_after]
 
     def _respond_to_issues(self, issues: Union[None, RunIssue, List[RunIssue], RunIssues],
                            code_and_output: Optional[CodeAndOutput] = None,
@@ -583,7 +585,7 @@ class DebuggerConverser(BackgroundProductsConverser):
         output_issues = []
         output_issues.extend(issues)
         output_issues.extend(self._get_issues_for_created_output_files(code_and_output, contexts))
-        self._remove_issues_exceeding_max_count(output_issues)
+        output_issues = self._remove_issues_exceeding_max_count(output_issues)
         if output_issues:
             # if the code ran, but output was incorrect, we delete any created files:
             code_and_output.created_files.delete_all_created_files(self.data_folder)

@@ -12,7 +12,7 @@ from data_to_paper.latex.latex_doc import LatexDocument
 
 from data_to_paper.research_types.hypothesis_testing.coding.base_code_conversers import \
     BaseScientificCodeProductsHandler, BaseScientificCodeProductsGPT
-from data_to_paper.utils import dedent_triple_quote_str
+from data_to_paper.text import dedent_triple_quote_str
 from data_to_paper.utils.nice_list import NiceDict
 from data_to_paper.utils.replacer import Replacer
 from data_to_paper.utils.types import ListBasedSet
@@ -211,7 +211,7 @@ class RequestCodeProducts(BaseScientificCodeProductsHandler, ProductsConverser):
         """
         if self.output_directory is None:
             return
-        with open(f'{self.output_directory}/{code_step}.py', 'w') as f:
+        with open(f'{self.output_directory}/{code_step}.py', 'w', encoding='utf-8') as f:
             f.write(code_and_output.code)
 
     def get_code_and_output(self) -> CodeAndOutput:

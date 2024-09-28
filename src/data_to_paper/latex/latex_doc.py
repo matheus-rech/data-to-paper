@@ -6,14 +6,13 @@ from typing import Optional, Dict, Union, Iterable, Collection, Tuple
 
 from pathlib import Path
 
-from data_to_paper.exceptions import MissingInstallationError
-from data_to_paper.latex import save_latex_and_compile_to_pdf
+from data_to_paper.terminate.exceptions import MissingInstallationError
 from data_to_paper.latex.clean_latex import process_latex_text_and_math
 from data_to_paper.latex.latex_to_pdf import evaluate_latex_num_command, is_pdflatex_package_installed, \
-    is_pdflatex_installed, PDFLATEX_INSTALLATION_INSTRUCTIONS
+    is_pdflatex_installed, save_latex_and_compile_to_pdf, PDFLATEX_INSTALLATION_INSTRUCTIONS
 
 from data_to_paper.servers.custom_types import Citation
-from data_to_paper.utils import dedent_triple_quote_str
+from data_to_paper.text import dedent_triple_quote_str
 
 DEFAULT_PACKAGES = (
     '[utf8]{inputenc}',
@@ -130,6 +129,10 @@ def get_tabular_block(latex_table: str) -> str:
     Extract the tabular block of the table.
     """
     return re.search(pattern=r'\\begin{tabular}.*\n(.*)\\end{tabular}', string=latex_table, flags=re.DOTALL).group(0)
+
+
+IS_PDFLATEX_INSTALLED: Optional[bool] = None
+MISSING_PDFLATEX_PACKAGES: Optional[bool] = None
 
 
 @dataclass(frozen=True)
@@ -277,11 +280,33 @@ class LatexDocument:
 
         return s
 
+    def _get_is_pdflatex_installed(self) -> bool:
+        global IS_PDFLATEX_INSTALLED
+        if IS_PDFLATEX_INSTALLED is None:
+            IS_PDFLATEX_INSTALLED = is_pdflatex_installed()
+        return IS_PDFLATEX_INSTALLED
+
+    def _get_missing_pdflatex_packages(self):
+        global MISSING_PDFLATEX_PACKAGES
+        if MISSING_PDFLATEX_PACKAGES is None:
+            MISSING_PDFLATEX_PACKAGES = []
+            for package_name in self.package_names:
+                is_installed = is_pdflatex_package_installed(package_name)
+                if is_installed is None:
+                    raise MissingInstallationError(
+                        package_name='pdflatex',
+                        instructions='Failed checking pdflatex sub-packages. Please install pdflatex first.')
+                status = 'Installed' if is_installed else 'Not installed'
+                print(f'pdflatex package `{package_name}`: {status}')
+                if not is_installed:
+                    MISSING_PDFLATEX_PACKAGES.append(package_name)
+        return MISSING_PDFLATEX_PACKAGES
+
     def raise_if_pdflatex_is_not_installed(self):
         """
         Check that pdflatex is installed.
         """
-        if not is_pdflatex_installed():
+        if not self._get_is_pdflatex_installed():
             raise MissingInstallationError(package_name='pdflatex', instructions=PDFLATEX_INSTALLATION_INSTRUCTIONS)
 
     @property
@@ -292,14 +317,7 @@ class LatexDocument:
         """
         Check that the packages used in the latex document are installed.
         """
-        missing_packages = []
-        for package_name in self.package_names:
-            is_installed = is_pdflatex_package_installed(package_name)
-            if is_installed is None:
-                print('Warning: failed checking if package is installed.')
-                return
-            elif not is_installed:
-                missing_packages.append(package_name)
+        missing_packages = self._get_missing_pdflatex_packages()
         if missing_packages:
             raise MissingInstallationError(package_name=f'pdflatex packages {missing_packages}',
                                            instructions='Please install the missing packages.')

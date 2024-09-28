@@ -9,11 +9,12 @@ from typing import Optional, Collection, Tuple, Dict
 
 from pathlib import Path
 
-from data_to_paper.exceptions import MissingInstallationError
+from data_to_paper.utils.subprocess_call import get_subprocess_kwargs
+from data_to_paper.terminate.exceptions import MissingInstallationError
 from data_to_paper.servers.custom_types import Citation
 from data_to_paper.utils.file_utils import run_in_temp_directory
 from data_to_paper.code_and_output_files.ref_numeric_values import replace_hyperlinks_with_values
-from data_to_paper.utils.text_extractors import extract_all_external_brackets
+from data_to_paper.text.text_extractors import extract_all_external_brackets
 
 from .exceptions import LatexCompilationError, LatexNumCommandFormulaEvalError, \
     LatexNestedNumCommandError, LatexNumCommandNoExplanation, PlainNumberLatexNumCommandError
@@ -21,7 +22,7 @@ from .exceptions import LatexCompilationError, LatexNumCommandFormulaEvalError, 
 BIB_FILENAME: str = 'citations.bib'
 WATERMARK_PATH: str = os.path.join(os.path.dirname(__file__), 'watermark.pdf')
 
-PDFLATEX_INSTALLATION_INSTRUCTIONS = """
+PDFLATEX_INSTALLATION_INSTRUCTIONS = r"""
 Installations instructions for pdflatex:
 
 * **On Ubuntu**:
@@ -55,8 +56,7 @@ def is_pdflatex_installed() -> Optional[bool]:
     None if check failed.
     """
     try:
-        subprocess.run(['pdflatex', '--version'], check=True, stdout=subprocess.DEVNULL,
-                       stderr=subprocess.DEVNULL)
+        subprocess.run(['pdflatex', '--version'], **get_subprocess_kwargs(capture=False))
     except FileNotFoundError:
         return False
     except subprocess.CalledProcessError:
@@ -71,8 +71,7 @@ def is_pdflatex_package_installed(package: str) -> Optional[bool]:
     None if check failed.
     """
     try:
-        subprocess.run(['kpsewhich', package + '.sty'], check=True, stdout=subprocess.DEVNULL,
-                       stderr=subprocess.DEVNULL)
+        subprocess.run(['kpsewhich', package + '.sty'], **get_subprocess_kwargs(capture=False))
     except FileNotFoundError:
         return None
     except subprocess.CalledProcessError:
@@ -158,16 +157,13 @@ def add_watermark_to_pdf(pdf_path: str, watermark_path: str, output_path: str = 
     if output_path is None:
         output_path = pdf_path
 
-    # Open the PDF and watermark files
-    pdf_doc = fitz.open(pdf_path)
-    watermark_doc = fitz.open(watermark_path)
+    with fitz.open(pdf_path) as pdf_doc, fitz.open(watermark_path) as watermark_doc:
+        for page in pdf_doc:
+            # Overlay the watermark onto the page by adding the XObject
+            page.show_pdf_page(page.rect, watermark_doc, 0)
 
-    for page in pdf_doc:
-        # Overlay the watermark onto the page by adding the XObject
-        page.show_pdf_page(page.rect, watermark_doc, 0)
-
-    # Save the watermarked PDF
-    pdf_doc.save(output_path, incremental=True, encryption=0)
+        # Save the watermarked PDF
+        pdf_doc.save(output_path, incremental=True, encryption=0)
 
 
 def _get_over_width_pts(pdflatex_output: str) -> Optional[float]:
@@ -195,14 +191,13 @@ def save_latex_and_compile_to_pdf(latex_content: str, file_stem: str, output_dir
         # Create the bib file:
         if should_compile_with_bib:
             references_bibtex = [reference.bibtex for reference in references]
-            with open(BIB_FILENAME, 'w') as f:
+            with open(BIB_FILENAME, 'w', encoding='utf-8') as f:
                 f.write('\n\n'.join(references_bibtex))
 
-        with open(latex_file_name, 'w') as f:
+        with open(latex_file_name, 'w', encoding='utf-8') as f:
             f.write(latex_content)
         try:
-            pdflatex_output = subprocess.run(pdflatex_params,
-                                             check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            pdflatex_output = subprocess.run(pdflatex_params, **get_subprocess_kwargs())
         except FileNotFoundError:
             raise MissingInstallationError(package_name="pdflatex", instructions=PDFLATEX_INSTALLATION_INSTRUCTIONS)
         except subprocess.CalledProcessError as e:
@@ -216,12 +211,12 @@ def save_latex_and_compile_to_pdf(latex_content: str, file_stem: str, output_dir
             try:
                 if should_compile_with_bib:
                     try:
-                        subprocess.run(['bibtex', file_stem], check=True)
+                        subprocess.run(['bibtex', file_stem], **get_subprocess_kwargs(capture=False))
                     except FileNotFoundError:
                         raise MissingInstallationError(package_name="bibtex",
                                                        instructions=PDFLATEX_INSTALLATION_INSTRUCTIONS)
-                subprocess.run(pdflatex_params, check=True)
-                subprocess.run(pdflatex_params, check=True)
+                subprocess.run(pdflatex_params, **get_subprocess_kwargs(capture=False))
+                subprocess.run(pdflatex_params, **get_subprocess_kwargs(capture=False))
             except subprocess.CalledProcessError:
                 _move_latex_and_pdf_to_output_directory(file_stem, output_directory, latex_file_name)
                 raise
